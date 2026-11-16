@@ -39,6 +39,10 @@ class Answer:
     refused: bool = False
 
 
+class LLMConfigError(RuntimeError):
+    """Claude credentials are missing, so no request can be sent."""
+
+
 @lru_cache(maxsize=1)
 def get_client() -> anthropic.Anthropic:
     # Reads ANTHROPIC_API_KEY (or an `ant auth login` profile) from the environment.
@@ -64,17 +68,26 @@ def generate_answer(question: str, chunks: list[RetrievedChunk]) -> Answer:
     content = [_document_block(c) for c in chunks]
     content.append({"type": "text", "text": question})
 
-    response = get_client().beta.messages.create(
-        model=settings.claude_model,
-        max_tokens=16000,
-        system=SYSTEM_PROMPT,
-        output_config={"effort": settings.claude_effort},
-        # If a safety classifier declines, the API retries on a fallback model
-        # inside the same call instead of returning an empty answer.
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
-        messages=[{"role": "user", "content": content}],
-    )
+    try:
+        response = get_client().beta.messages.create(
+            model=settings.claude_model,
+            max_tokens=16000,
+            system=SYSTEM_PROMPT,
+            output_config={"effort": settings.claude_effort},
+            # If a safety classifier declines, the API retries on a fallback model
+            # inside the same call instead of returning an empty answer.
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            messages=[{"role": "user", "content": content}],
+        )
+    except TypeError as exc:
+        # The SDK raises TypeError when it finds no API key or auth profile.
+        if "authentication" in str(exc).lower():
+            raise LLMConfigError(
+                "ANTHROPIC_API_KEY is not set. Copy .env.example to .env, add your key, "
+                "and restart the API server."
+            ) from exc
+        raise
 
     if response.stop_reason == "refusal":
         return Answer(

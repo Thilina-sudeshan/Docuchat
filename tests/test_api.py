@@ -62,5 +62,24 @@ def test_delete_document(client, sample_pdf):
     assert client.get("/documents").json() == {"documents": []}
 
 
+def test_missing_api_key_gives_clear_error(tmp_path, sample_pdf, monkeypatch):
+    import app.llm as llm
+
+    def no_key_client():
+        raise TypeError("Could not resolve authentication method.")
+
+    monkeypatch.setattr(llm, "get_client", no_key_client)
+    pipeline = RAGPipeline(store=VectorStore(path=tmp_path / "chroma"))
+    app.dependency_overrides[get_pipeline] = lambda: pipeline
+    try:
+        c = TestClient(app)
+        c.post("/documents", files={"file": ("policy.pdf", sample_pdf, "application/pdf")})
+        r = c.post("/ask", json={"question": "refund?"})
+    finally:
+        app.dependency_overrides.clear()
+    assert r.status_code == 500
+    assert "ANTHROPIC_API_KEY" in r.json()["detail"]
+
+
 def test_empty_question_rejected(client):
     assert client.post("/ask", json={"question": ""}).status_code == 422

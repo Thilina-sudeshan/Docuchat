@@ -13,6 +13,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from .config import settings
+from .llm import LLMConfigError
 from .rag import RAGPipeline
 
 app = FastAPI(
@@ -92,6 +93,8 @@ def delete_document(filename: str, pipeline: RAGPipeline = Depends(get_pipeline)
 def ask(req: AskRequest, pipeline: RAGPipeline = Depends(get_pipeline)):
     try:
         answer, retrieved = pipeline.ask(req.question, req.top_k)
+    except LLMConfigError as exc:
+        raise HTTPException(500, str(exc)) from exc
     except anthropic.AuthenticationError as exc:
         raise HTTPException(500, "Claude API key is missing or invalid. Check your .env file.") from exc
     except anthropic.RateLimitError as exc:

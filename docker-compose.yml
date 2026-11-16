@@ -1,0 +1,23 @@
+services:
+  api:
+    build: .
+    env_file: .env
+    environment:
+      CHROMA_DIR: /data/chroma
+    volumes:
+      - docuchat-data:/data
+    ports:
+      - "8000:8000"
+
+  ui:
+    build: .
+    command: streamlit run ui/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+    environment:
+      DOCUCHAT_API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+
+volumes:
+  docuchat-data:
